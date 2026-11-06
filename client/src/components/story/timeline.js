@@ -1,4 +1,4 @@
-import { gsap } from "@/lib/gsap";
+import { gsap, ScrollTrigger } from "@/lib/gsap";
 import film from "@/data/film.json";
 import { getFilm } from "./filmPlayer";
 
@@ -75,43 +75,64 @@ export function buildStory(root, { reduce }) {
 
   /* ---------------- the film ---------------- */
 
-  // Portrait screens crop the film: keep Abin in view by moving the crop.
-  // The portrait film (phones) is already framed around him, so only the
-  // stills — and the landscape film on other portrait screens — need moving.
+  // Portrait screens (phones) use the 9:16 film — either native vertical shots
+  // or the landscape film cropped to follow Abin — and its own still set when
+  // vertical keyframes exist. Both are already framed, so nothing pans.
+  const portraitScreen = window.matchMedia("(orientation: portrait)").matches;
   const portraitFilm = el.video?.dataset.variant === "portrait";
+  const portraitStills = portraitScreen ? qa("still-portrait") : [];
+  const stills = portraitStills.length ? portraitStills : el.stills;
+  const shots = portraitFilm ? film.portrait.shots || film.shots : film.shots;
+
   if (portraitFilm) gsap.set(el.video, { objectPosition: "50% 50%" });
-  const media = portraitFilm ? el.stills : [el.video, ...el.stills];
+  // Anything showing the landscape picture on a narrow screen is cropped:
+  // move the crop so Abin stays in view.
+  const panning = [...(portraitFilm ? [] : [el.video]), ...(portraitStills.length ? [] : stills)].filter(Boolean);
   const visible = Math.min(1, window.innerWidth / window.innerHeight / (film.width / film.height));
   const frame = (x) => {
     if (visible >= 0.999) return "50% 45%";
     const p = gsap.utils.clamp(0, 1, (x - visible / 2) / (1 - visible));
     return `${(p * 100).toFixed(2)}% 45%`;
   };
-  gsap.set(media, { objectPosition: frame(film.focus[0][0]) });
+  if (panning.length) gsap.set(panning, { objectPosition: frame(film.focus[0][0]) });
 
   // Keyframe stills: shown while the film loads, and on their own for reduced
   // motion. Shot N runs from still N to still N+1, so they cross-fade at each cut.
-  gsap.set(el.stills, { opacity: (i) => (i === 0 ? 1 : 0) });
+  gsap.set(stills, { opacity: (i) => (i === 0 ? 1 : 0) });
   CUTS.forEach(({ scene, shot, to }) => {
-    const next = el.stills[shot + 1];
+    const next = stills[shot + 1];
     if (!next) return;
     tl.to(next, { opacity: 1, duration: dur(scene, 0.08) }, at(scene, to - 0.08));
-    tl.to(el.stills[shot], { opacity: 0, duration: dur(scene, 0.08) }, at(scene, to - 0.04));
+    tl.to(stills[shot], { opacity: 0, duration: dur(scene, 0.08) }, at(scene, to - 0.04));
   });
 
   const player = reduce ? null : getFilm();
-  if (player) {
+  if (player && portraitFilm) {
+    // Phones: each shot PLAYS when you scroll into its scene, then holds its
+    // last frame. Scrolling back jumps to the end of the earlier shot.
+    // (Phones play video smoothly but are weak at frame-by-frame seeking.)
+    CUTS.forEach(({ scene, shot }) => {
+      const s = shots[shot];
+      ScrollTrigger.create({
+        trigger: root.querySelector(`[data-flow] [data-scene="${scene}"]`),
+        start: "top 70%",
+        onEnter: () => player.play(s.start, s.end),
+        onEnterBack: () => player.hold(s.end),
+      });
+    });
+  } else if (player) {
+    // Desktop: the film is scrubbed frame by frame with scroll.
     const clock = { t: 0 };
     CUTS.forEach(({ scene, shot, from, to }) => {
-      const s = film.shots[shot];
+      const s = shots[shot];
       tl.fromTo(clock, { t: s.start }, { t: s.end, duration: dur(scene, to - from), immediateRender: false }, at(scene, from));
     });
     tl.eventCallback("onUpdate", () => player.seek(clock.t));
   }
-  if (!reduce) {
+  if (!reduce && panning.length) {
     CUTS.forEach(({ scene, shot, from, to }) => {
       const [a, b] = film.focus[shot];
-      tl.fromTo(media, { objectPosition: frame(a) }, { objectPosition: frame(b), duration: dur(scene, to - from), immediateRender: false }, at(scene, from));
+      tl.fromTo(panning, { objectPosition: frame(a) }, { objectPosition: frame(b), duration: dur(scene, to - from), immediateRender: false }, at(scene, from));
     });
   }
 

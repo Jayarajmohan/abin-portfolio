@@ -26,6 +26,8 @@ const DATA = path.join(ROOT, "src", "data", "film.json");
 const SHOTS = 6;
 const CROP_W = 1690 / 1920; // keep the left 88% of each 1920×1080 frame (drops the watermark)
 const OUT_W = 1280;
+const MOBILE_SRC = path.join(SRC, "mobile");
+const MOBILE_CROP = 0.92; // vertical shots: keep the top-left 92% (drops the corner watermark)
 const PORTRAIT_W = 576;
 const PORTRAIT_H = 1024;
 const FPS = 24;
@@ -69,16 +71,22 @@ function duration(file) {
   });
 
   // Per-shot length after re-timing to a constant FPS (frames are what we scrub).
-  const lengths = shots.map((f) => Math.floor(duration(f) * FPS) / FPS);
+  const lengthsOf = (files) => files.map((f) => Math.floor(duration(f) * FPS) / FPS);
+  const lengths = lengthsOf(shots);
 
-  /** Join the shots (each through `shape(i)`) and encode for scrubbing. */
-  const encode = (shape, out, { crf, gop }) => {
-    const filters = shots.map((_, i) => `[${i}:v]fps=${FPS},${shape(i)},setsar=1,trim=duration=${lengths[i]},setpts=PTS-STARTPTS[v${i}]`);
+  // Optional native vertical (9:16) shots for phones: assets-src/film/mobile/shot-N.mp4
+  const mobileShots = Array.from({ length: SHOTS }, (_, i) => path.join(MOBILE_SRC, `shot-${i + 1}.mp4`));
+  const hasMobile = mobileShots.every((f) => fs.existsSync(f));
+  const mobileLengths = hasMobile ? lengthsOf(mobileShots) : null;
+
+  /** Join `inputs` (each through `shape(i)`) and encode for scrubbing. */
+  const encode = (inputs, lens, shape, out, { crf, gop }) => {
+    const filters = inputs.map((_, i) => `[${i}:v]fps=${FPS},${shape(i)},setsar=1,trim=duration=${lens[i]},setpts=PTS-STARTPTS[v${i}]`);
     run([
       "-y",
-      ...shots.flatMap((f) => ["-i", f]),
+      ...inputs.flatMap((f) => ["-i", f]),
       "-filter_complex",
-      `${filters.join(";")};${shots.map((_, i) => `[v${i}]`).join("")}concat=n=${SHOTS}:v=1:a=0[v]`,
+      `${filters.join(";")};${inputs.map((_, i) => `[v${i}]`).join("")}concat=n=${inputs.length}:v=1:a=0[v]`,
       "-map", "[v]",
       "-an",
       "-c:v", "libx264",
@@ -97,13 +105,19 @@ function duration(file) {
 
   // 1a. Landscape film (desktop / tablets in landscape): crop off the watermark strip
   const film = path.join(OUT, "film.mp4");
-  encode(() => `crop=iw*${CROP_W.toFixed(4)}:ih:0:0,scale=${OUT_W}:-2:flags=lanczos`, film, { crf: 26, gop: 6 });
+  encode(shots, lengths, () => `crop=iw*${CROP_W.toFixed(4)}:ih:0:0,scale=${OUT_W}:-2:flags=lanczos`, film, { crf: 26, gop: 6 });
 
-  // 1b. Portrait film (phones): a 9:16 window that follows Abin through each
-  //     shot (FOCUS start → end), so phones get a sharp, pre-framed picture
-  //     and decode far fewer pixels per seek. Shorter GOP = snappier on iOS.
+  // 1b. Portrait film (phones).
+  //     • With native vertical shots: use them, trimming a corner strip to
+  //       drop the watermark (crop keeps 9:16).
+  //     • Otherwise: a 9:16 window of the landscape shots that follows Abin
+  //       (FOCUS waypoints).
   const portrait = path.join(OUT, "film-portrait.mp4");
-  encode(
+  if (hasMobile) {
+    encode(mobileShots, mobileLengths, () => `crop=iw*${MOBILE_CROP}:ih*${MOBILE_CROP}:0:0,scale=${PORTRAIT_W}:${PORTRAIT_H}:flags=lanczos`, portrait, { crf: 28, gop: 4 });
+  } else encode(
+    shots,
+    lengths,
     (i) => {
       const pts = waypoints(i, lengths[i]);
       // piecewise-linear focus(t) as nested if(lt(t,…)) — commas escaped for the filtergraph
@@ -134,19 +148,39 @@ function duration(file) {
     stills.push(`/film/k${k}.webp`);
   }
 
+  // 2b. Vertical keyframe stills (only with native vertical shots)
+  const mobileStills = [];
+  if (hasMobile) {
+    for (let k = 0; k <= SHOTS; k++) {
+      const src = ["png", "jpg", "jpeg", "webp"].map((ext) => path.join(MOBILE_SRC, `k${k}.${ext}`)).find((f) => fs.existsSync(f));
+      if (!src) continue;
+      const meta = await sharp(src).metadata();
+      await sharp(src)
+        .extract({ left: 0, top: 0, width: Math.round(meta.width * MOBILE_CROP), height: Math.round(meta.height * MOBILE_CROP) })
+        .resize(PORTRAIT_W, PORTRAIT_H, { fit: "cover" })
+        .webp({ quality: 74 })
+        .toFile(path.join(OUT, `mk${k}.webp`));
+      mobileStills.push(`/film/mk${k}.webp`);
+    }
+  }
+
   const { width, height } = await new Promise((resolve) => {
     // first frame → size check (and handy poster)
     run(["-y", "-i", film, "-frames:v", "1", path.join(OUT, "poster.jpg")]);
     sharp(path.join(OUT, "poster.jpg")).metadata().then(resolve);
   });
 
-  // shot start times in the joined film
-  let t = 0;
-  const shotTimes = lengths.map((len) => {
-    const s = { start: Number(t.toFixed(4)), end: Number((t + len - 1 / FPS).toFixed(4)) };
-    t += len;
-    return s;
-  });
+  // shot start/end times in a joined film
+  const timesOf = (lens) => {
+    let acc = 0;
+    return lens.map((len) => {
+      const s = { start: Number(acc.toFixed(4)), end: Number((acc + len - 1 / FPS).toFixed(4)) };
+      acc += len;
+      return s;
+    });
+  };
+  const shotTimes = timesOf(lengths);
+  const t = lengths.reduce((a, b) => a + b, 0);
   // start/end focus per shot, in the landscape film's (cropped) width — used by the
   // keyframe stills on portrait screens
   const focus = FOCUS.map((_, i) => {
@@ -159,7 +193,14 @@ function duration(file) {
     poster: "/film/poster.jpg",
     width,
     height,
-    portrait: { src: "/film/film-portrait.mp4", width: PORTRAIT_W, height: PORTRAIT_H },
+    portrait: {
+      src: "/film/film-portrait.mp4",
+      width: PORTRAIT_W,
+      height: PORTRAIT_H,
+      native: hasMobile, // true = built from vertical shots, false = cropped landscape
+      shots: timesOf(hasMobile ? mobileLengths : lengths),
+      ...(mobileStills.length === SHOTS + 1 ? { stills: mobileStills } : {}),
+    },
     fps: FPS,
     duration: Number(t.toFixed(4)),
     shots: shotTimes,
@@ -170,7 +211,8 @@ function duration(file) {
 
   const mb = (f) => (fs.statSync(f).size / 1024 / 1024).toFixed(2);
   console.log(`film.mp4: ${width}×${height}, ${t.toFixed(2)}s, ${mb(film)} MB`);
-  console.log(`film-portrait.mp4: ${PORTRAIT_W}×${PORTRAIT_H}, ${mb(portrait)} MB`);
+  console.log(`film-portrait.mp4: ${PORTRAIT_W}×${PORTRAIT_H}, ${mb(portrait)} MB (${hasMobile ? "native vertical shots" : "cropped from landscape"})`);
+  if (hasMobile) console.log(`vertical stills: ${mobileStills.length}/${SHOTS + 1}`);
   console.log(`stills: ${stills.length}`);
   console.log("data →", path.relative(ROOT, DATA));
 })().catch((e) => {

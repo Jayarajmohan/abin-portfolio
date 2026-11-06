@@ -39,6 +39,12 @@ keyframe every 6 frames, no B-frames), crops off the generator watermark, export
 keyframes as `public/film/k*.webp`, and writes timings to `src/data/film.json`.
 
 To replace a shot: overwrite `assets-src/film/shot-N.mp4` and run `npm run film`.
+
+**Phones** get `public/film/film-portrait.mp4` (9:16). Each shot *plays* when its scene
+scrolls into view and holds its last frame (phones play video smoothly but seek poorly);
+desktop scrubs frame by frame. If native vertical shots exist in `assets-src/film/mobile/`
+(`k0…k6` + `shot-1…6.mp4`), `npm run film` builds the phone film and stills from them;
+otherwise it crops the landscape shots to follow Abin.
 If Abin sits somewhere else in the new shot, update its `FOCUS` entry in
 `scripts/build-film.cjs` (used to keep him in view on portrait phones).
 

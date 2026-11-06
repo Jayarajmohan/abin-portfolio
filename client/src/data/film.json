@@ -6,7 +6,34 @@
   "portrait": {
     "src": "/film/film-portrait.mp4",
     "width": 576,
-    "height": 1024
+    "height": 1024,
+    "native": false,
+    "shots": [
+      {
+        "start": 0,
+        "end": 9.9167
+      },
+      {
+        "start": 9.9583,
+        "end": 19.875
+      },
+      {
+        "start": 19.9167,
+        "end": 29.8333
+      },
+      {
+        "start": 29.875,
+        "end": 39.7917
+      },
+      {
+        "start": 39.8333,
+        "end": 49.75
+      },
+      {
+        "start": 49.7917,
+        "end": 59.7083
+      }
+    ]
   },
   "fps": 24,
   "duration": 59.75,

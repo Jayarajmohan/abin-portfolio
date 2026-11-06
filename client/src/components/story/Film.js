@@ -3,8 +3,11 @@ import { useLayoutEffect, useRef } from "react";
 import film from "@/data/film.json";
 import { createFilm } from "./filmPlayer";
 
-/** Portrait screens (phones) get the pre-framed 9:16 film. */
-export const isPortraitScreen = () => typeof window !== "undefined" && window.innerWidth / window.innerHeight < 0.9 && !!film.portrait;
+/** Portrait screens (phones) get the 9:16 film. */
+export const isPortraitScreen = () => typeof window !== "undefined" && !!film.portrait && window.matchMedia("(orientation: portrait)").matches;
+
+// Vertical keyframes exist once native 9:16 shots have been added (npm run film).
+const portraitStills = film.portrait?.stills || [];
 
 /**
  * Full-screen film layer of the stage.
@@ -49,10 +52,23 @@ export default function Film() {
           src={src}
           alt=""
           data-st="still"
-          className="absolute inset-0 h-full w-full object-cover"
+          className={`absolute inset-0 h-full w-full object-cover ${portraitStills.length ? "portrait:hidden" : ""}`}
           style={{ opacity: i === 0 ? 1 : 0 }}
           loading={i === 0 ? "eager" : "lazy"}
           fetchPriority={i === 0 ? "high" : "low"}
+          decoding="async"
+          draggable="false"
+        />
+      ))}
+      {portraitStills.map((src, i) => (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          data-st="still-portrait"
+          className="absolute inset-0 h-full w-full object-cover landscape:hidden"
+          style={{ opacity: i === 0 ? 1 : 0 }}
+          loading={i === 0 ? "eager" : "lazy"}
           decoding="async"
           draggable="false"
         />

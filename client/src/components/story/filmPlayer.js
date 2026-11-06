@@ -107,20 +107,64 @@ export function createFilm(video, src, { onReady, onProgress } = {}) {
       ready = true;
       video.currentTime = target;
       onReady?.();
+      if (pending) film.play(pending.start, pending.end);
     })
     .catch(() => {
       /* offline / aborted: the still frames stay visible */
     });
 
+  /* ---- "play" mode (phones): play a shot like a normal video, then hold ---- */
+  let segment = null; // { end } while a shot is playing
+  let pending = null; // play request made before the film finished loading
+  let watch = 0;
+  const stopAt = (t) => {
+    segment = null;
+    cancelAnimationFrame(watch);
+    video.pause();
+    target = t;
+    if (ready) video.currentTime = t;
+  };
+  const watchEnd = () => {
+    if (!segment) return;
+    if (video.currentTime >= segment.end - 0.5 / 24) stopAt(segment.end);
+    else watch = requestAnimationFrame(watchEnd);
+  };
+
   const film = {
+    /** Scrub mode: show the frame at time t (driven by scroll). */
     seek(t) {
+      if (segment) return;
       target = t;
       request();
+    },
+    /** Play mode: play [start, end] in real time, then hold the last frame. */
+    play(start, end) {
+      cancelAnimationFrame(watch);
+      target = end; // what to show if playback can't start
+      if (!ready) {
+        pending = { start, end }; // e.g. the first scene, requested before the film loaded
+        return;
+      }
+      pending = null;
+      segment = { end };
+      video.currentTime = start;
+      video
+        .play()
+        .then(() => {
+          watch = requestAnimationFrame(watchEnd);
+        })
+        .catch(() => stopAt(end));
+    },
+    /** Play mode: jump straight to a frame and hold it. */
+    hold(t) {
+      pending = null;
+      stopAt(t);
     },
     destroy() {
       destroyed = true;
       abort.abort();
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(watch);
       video.removeEventListener("seeked", request);
       window.removeEventListener("touchstart", unlock);
       window.removeEventListener("pointerdown", unlock);
