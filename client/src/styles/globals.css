@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@theme {
+  /* Deep black · charcoal · graphite · subtle cyan · soft white */
+  --color-ink: #060708;
+  --color-panel: #0E1013;
+  --color-surface: #15181C;
+  --color-line: #23272D;
+  --color-line-strong: #343A42;
+  --color-fg: #EDF1F4;
+  --color-fg-muted: #B9C1C9;
+  --color-fg-subtle: #8C959F;
+  --color-accent: #4FD8EB;
+  --color-accent-deep: #0B5563;
+
+  --font-display: var(--font-space-grotesk), ui-sans-serif, sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+}
+
+html {
+  background: var(--color-ink);
+  color: var(--color-fg);
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* Lenis recommended styles */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis:not(.lenis-autoToggle).lenis-stopped {
+  overflow: clip;
+}
+.lenis [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+/* "Scroll to begin" cue */
+@keyframes cue {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(200%); }
+}
+.anim-cue { animation: cue 1.8s cubic-bezier(0.6, 0, 0.4, 1) infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .anim-cue { animation: none !important; }
+}
