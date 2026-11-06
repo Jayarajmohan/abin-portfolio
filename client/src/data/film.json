@@ -7,7 +7,7 @@
     "src": "/film/film-portrait.mp4",
     "width": 576,
     "height": 1024,
-    "native": false,
+    "native": true,
     "shots": [
       {
         "start": 0,
@@ -33,6 +33,15 @@
         "start": 49.7917,
         "end": 59.7083
       }
+    ],
+    "stills": [
+      "/film/mk0.webp",
+      "/film/mk1.webp",
+      "/film/mk2.webp",
+      "/film/mk3.webp",
+      "/film/mk4.webp",
+      "/film/mk5.webp",
+      "/film/mk6.webp"
     ]
   },
   "fps": 24,

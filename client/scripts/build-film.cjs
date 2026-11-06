@@ -27,7 +27,11 @@ const SHOTS = 6;
 const CROP_W = 1690 / 1920; // keep the left 88% of each 1920×1080 frame (drops the watermark)
 const OUT_W = 1280;
 const MOBILE_SRC = path.join(SRC, "mobile");
-const MOBILE_CROP = 0.92; // vertical shots: keep the top-left 92% (drops the corner watermark)
+// Vertical shots: the generator's ✦ sits inside the picture (bottom-right, over
+// empty floor), so it's painted out with ffmpeg's delogo (coords in 1080×1920).
+const MOBILE_LOGO = "delogo=x=850:y=1690:w=145:h=150";
+// Vertical stills: the ✦ is in the bottom ~5%, so that strip is trimmed off.
+const MOBILE_STILL_KEEP_H = 0.945;
 const PORTRAIT_W = 576;
 const PORTRAIT_H = 1024;
 const FPS = 24;
@@ -108,13 +112,12 @@ function duration(file) {
   encode(shots, lengths, () => `crop=iw*${CROP_W.toFixed(4)}:ih:0:0,scale=${OUT_W}:-2:flags=lanczos`, film, { crf: 26, gop: 6 });
 
   // 1b. Portrait film (phones).
-  //     • With native vertical shots: use them, trimming a corner strip to
-  //       drop the watermark (crop keeps 9:16).
+  //     • With native vertical shots: use them, with the watermark painted out.
   //     • Otherwise: a 9:16 window of the landscape shots that follows Abin
   //       (FOCUS waypoints).
   const portrait = path.join(OUT, "film-portrait.mp4");
   if (hasMobile) {
-    encode(mobileShots, mobileLengths, () => `crop=iw*${MOBILE_CROP}:ih*${MOBILE_CROP}:0:0,scale=${PORTRAIT_W}:${PORTRAIT_H}:flags=lanczos`, portrait, { crf: 28, gop: 4 });
+    encode(mobileShots, mobileLengths, () => `scale=1080:1920,${MOBILE_LOGO},scale=${PORTRAIT_W}:${PORTRAIT_H}:flags=lanczos`, portrait, { crf: 28, gop: 4 });
   } else encode(
     shots,
     lengths,
@@ -156,8 +159,8 @@ function duration(file) {
       if (!src) continue;
       const meta = await sharp(src).metadata();
       await sharp(src)
-        .extract({ left: 0, top: 0, width: Math.round(meta.width * MOBILE_CROP), height: Math.round(meta.height * MOBILE_CROP) })
-        .resize(PORTRAIT_W, PORTRAIT_H, { fit: "cover" })
+        .extract({ left: 0, top: 0, width: meta.width, height: Math.round(meta.height * MOBILE_STILL_KEEP_H) })
+        .resize(720)
         .webp({ quality: 74 })
         .toFile(path.join(OUT, `mk${k}.webp`));
       mobileStills.push(`/film/mk${k}.webp`);
