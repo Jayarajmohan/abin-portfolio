@@ -46,7 +46,9 @@ export default function StoryExperience() {
   useGSAP(
     () => {
       const mm = gsap.matchMedia();
-      mm.add({ desktop: "(min-width: 1024px)", reduce: "(prefers-reduced-motion: reduce)" }, (ctx) => {
+      // NB: gsap.matchMedia only runs this when at least one condition matches,
+      // so phones need their own condition or the story never gets built.
+      mm.add({ desktop: "(min-width: 1024px)", mobile: "(max-width: 1023.98px)", reduce: "(prefers-reduced-motion: reduce)" }, (ctx) => {
         buildStory(root.current, ctx.conditions);
       });
       return () => mm.revert();
