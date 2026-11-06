@@ -76,7 +76,11 @@ export function buildStory(root, { reduce }) {
   /* ---------------- the film ---------------- */
 
   // Portrait screens crop the film: keep Abin in view by moving the crop.
-  const media = [el.video, ...el.stills];
+  // The portrait film (phones) is already framed around him, so only the
+  // stills — and the landscape film on other portrait screens — need moving.
+  const portraitFilm = el.video?.dataset.variant === "portrait";
+  if (portraitFilm) gsap.set(el.video, { objectPosition: "50% 50%" });
+  const media = portraitFilm ? el.stills : [el.video, ...el.stills];
   const visible = Math.min(1, window.innerWidth / window.innerHeight / (film.width / film.height));
   const frame = (x) => {
     if (visible >= 0.999) return "50% 45%";
